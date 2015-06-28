@@ -69,7 +69,7 @@
   :group 'org-wlist
   :type 'boolean)
 
-(defcustom org-wlist-icon "WunderList.png"
+(defcustom org-wlist-icon "Wunderlist.png"
   "org-gcal icon filename."
   :group 'org-gcal
   :type `(choice  ,@(mapcar (lambda (c)
@@ -644,7 +644,7 @@ Otherwise return nil."
           (alert mes :title title))
       (deferred:$
         (deferred:url-retrieve
-          (concat "https://raw.githubusercontent.com/myuhe/org-wunderlist.el/master/"
+          (concat "https://raw.githubusercontent.com/myuhe/org-wunderlist.el/master/icon/"
                   org-wlist-icon))
         (deferred:nextc it
           (lambda (buf)
@@ -658,6 +658,7 @@ Otherwise return nil."
             (alert mes :title title :icon file)
           (alert mes :title title))))))))
 
+(org-wlist--notify "test" "hoge")
 (provide 'org-wunderlist)
 
 ;;; org-wunderlist.el ends here
