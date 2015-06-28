@@ -1,4 +1,4 @@
-* Org-Gcal 
- =org-gcal= offers
+* Org-Wunderlist 
+ =org-wunderlist= offers
   - Fetch Wunderlist task
   - Post/edit org element
