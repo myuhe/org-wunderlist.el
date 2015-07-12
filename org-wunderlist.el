@@ -73,7 +73,7 @@
   "org-gcal icon filename."
   :group 'org-gcal
   :type `(choice  ,@(mapcar (lambda (c)
-                       `(const :tag ,c ,c))
+                              `(const :tag ,c ,c))
                             '("WunderList.png"
                               "WunderList_black.png"
                               "WunderList_black2.png"
@@ -82,6 +82,20 @@
                               "WunderList.svg"
                               "WunderList2.svg"
                               "WunderList3.svg"))))
+
+(defcustom org-wlist-dir (concat user-emacs-directory "org-wunderlist/")
+  "Directory for store org-wunderlist data."
+  :group 'org-wlist
+  :type 'file)
+
+(defcustom org-wlist-mime-alist
+  '(("application/msword" . ".doc")
+    ("application/vnd.openxmlformats-officedocument.wordprocessingml.document" . ".docx")
+    ("application/pdf" . ".pdf")
+    ("application/x-zip-compressed" . ".zip")
+    ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" . ".xlsx")
+    ("application/vnd.ms-excel" . "xls"))
+  "alist for mime translation.")
 
 (defconst org-wlist-url "https://a.wunderlist.com/api/v1/")
 
@@ -94,62 +108,104 @@
   (interactive)
   (remove-hook 'after-change-functions 'org-wlist--collect-change-pos t)
   (let ((buf  (org-wlist--get-buffer)))
-  (deferred:$
-    (deferred:parallel
-      (mapcar (lambda (endpoint)
-                (org-wlist--request endpoint))
-              '("root" "lists" "list_positions")))
-    (deferred:nextc it
-      (lambda (res)
-        (plist-put org-wlist-plist :id  (plist-get (car res) :id))
-        (plist-put org-wlist-plist :rev (plist-get (car res) :revision))
-        (plist-put org-wlist-plist :list  (cadr res))
-        (plist-put org-wlist-plist :list-pos  (caddr res))
-        (mapcar (lambda (x)
-                  (number-to-string (plist-get x :id)) ) (cadr res))))
-    (deferred:nextc it
-      (lambda (id)
-        (deferred:$
-          (deferred:parallel
-            (apply 'append
-                   (cl-mapcar (lambda (name)
-                                (cl-mapcar (lambda (endpoint params)
-                                             (org-wlist--request endpoint `(("list_id" . ,params))))
-                                           (make-list (length id) name) id))
-                              '("tasks" "task_positions" "subtask" "subtask_positions" "notes" "reminders"))))
-          (deferred:nextc it
-            (lambda (res)
-              (cl-mapcar (lambda (lst task task-pos subtask subtask-pos note reminder)
-                           (plist-put lst :task task)
-                           (plist-put lst :task-pos task-pos)
-                           (plist-put lst :subtask subtask)
-                           (plist-put lst :subtask-pos subtask-pos)
-                           (plist-put lst :note note)
-                           (plist-put lst :reminder reminder))
-                         (plist-get org-wlist-plist :list)
-                         (org-wlist--map (number-sequence 0                 (1- (length id))) res)
-                         (org-wlist--map (number-sequence (length id)       (1- (* 2 (length id)))) res)
-                         (org-wlist--map (number-sequence (* 2 (length id)) (1- (* 3 (length id)))) res)
-                         (org-wlist--map (number-sequence (* 3 (length id)) (1- (* 4 (length id)))) res)
-                         (org-wlist--map (number-sequence (* 4 (length id)) (1- (* 5 (length id)))) res)
-                         (org-wlist--map (number-sequence (* 5 (length id)) (1- (* 6 (length id)))) res))
-              (with-current-buffer buf
-                (save-excursion
-                  (erase-buffer)
-                  (insert (org-wlist--dump))
-                  (save-buffer)
-                  (org-global-cycle 64)
-                  (add-hook 'after-change-functions 'org-wlist--collect-change-pos nil t)))))))))))
+    (deferred:$
+      (deferred:parallel
+        (mapcar (lambda (endpoint)  
+                  (org-wlist--request endpoint))
+                '("root" "lists" "list_positions")))
+      (deferred:nextc it
+        (lambda (res)
+          (plist-put org-wlist-plist :id  (plist-get (car res) :id))
+          (plist-put org-wlist-plist :rev (plist-get (car res) :revision))
+          (plist-put org-wlist-plist :list  (cadr res))
+          (plist-put org-wlist-plist :list-pos  (caddr res))
+          (mapcar (lambda (x)
+                    (number-to-string (plist-get x :id)) ) (cadr res))))
+      (deferred:nextc it
+        (lambda (id)
+          (deferred:$
+            (deferred:parallel
+              (mapcar (lambda (params)
+                        (org-wlist--request "tasks" `(("completed" . "true")
+                                                      ("list_id"   . ,params)))) id))
+            (deferred:nextc it          
+              (lambda (res)
+                (cl-mapcar (lambda (lst completed)
+                             (plist-put lst :completed completed))
+                           (plist-get org-wlist-plist :list)
+                           (org-wlist--map (number-sequence 0                 (1- (length id))) res))))
+
+            (deferred:parallel
+              (append
+               (apply 'append
+                      (cl-mapcar (lambda (name)
+                                   (cl-mapcar (lambda (endpoint params)
+                                                (org-wlist--request endpoint `(("list_id" . ,params))))
+                                              (make-list (length id) name) id))
+                                 '("tasks"
+                                   "task_positions"
+                                   "subtasks"
+                                   "subtask_positions")))))
+            (deferred:nextc it
+              (lambda (res)
+                (cl-mapcar (lambda (lst task task-pos subtask subtask-pos)
+                             (plist-put lst :task task)
+                             (plist-put lst :task-pos task-pos)
+                             (plist-put lst :subtask subtask)
+                             (plist-put lst :subtask-pos subtask-pos))
+                           (plist-get org-wlist-plist :list)
+                           (org-wlist--map (number-sequence 0                 (1- (length id))) res)
+                           (org-wlist--map (number-sequence (length id)       (1- (* 2 (length id)))) res)
+                           (org-wlist--map (number-sequence (* 2 (length id)) (1- (* 3 (length id)))) res)
+                           (org-wlist--map (number-sequence (* 3 (length id)) (1- (* 4 (length id)))) res))))
+            (deferred:parallel
+              (append
+               (apply 'append
+                      (cl-mapcar (lambda (name)
+                                   (cl-mapcar (lambda (endpoint params)
+                                                (org-wlist--request endpoint `(("list_id" . ,params))))
+                                              (make-list (length id) name) id))
+                                 '("notes" "reminders" "files")))))
+            (deferred:nextc it
+              (lambda (res)
+                (cl-mapcar (lambda (lst  note reminder file)
+                             (plist-put lst :note note)
+                             (plist-put lst :reminder reminder)
+                             (plist-put lst :file file))
+                           (plist-get org-wlist-plist :list)
+                           (org-wlist--map (number-sequence 0                 (1- (length id))) res)
+                           (org-wlist--map (number-sequence (length id)       (1- (* 2 (length id)))) res)
+                           (org-wlist--map (number-sequence (* 2 (length id)) (1- (* 3 (length id)))) res))
+                (with-current-buffer buf
+                  (save-excursion
+                    (let ((dump (org-wlist--dump)))
+                      (remove-hook 'after-change-functions 'org-wlist--collect-change-pos t)
+                      (erase-buffer)
+                      (insert dump)
+                      (save-buffer)
+                      (org-global-cycle 64)
+                      (add-hook 'after-change-functions 'org-wlist--collect-change-pos nil t)
+                      (org-wlist--notify "Task fetching" "Fetching task is completed."))))))))))))
 
 (defun org-wlist--dump ()
   (let (str-lst)
-    (cl-loop for lst-id across (plist-get (elt (plist-get org-wlist-plist :list-pos) 0) :values)
+    (cl-loop for lst-id across (org-wlist--get-list-pos-prop :values)
              do
              (cl-loop for lst-value across (plist-get org-wlist-plist :list)
                       when (eq lst-id (plist-get lst-value :id))
                       do
                       (setq str-lst
                             (org-wlist--append-list str-lst lst-value))
+                      ;;archive task that completed server side
+                      (cl-loop for comp-value across (plist-get lst-value :completed)
+                               do
+                               (cl-loop for comp-task in (org-wlist--get-id-alist)
+                                        when (string= (caar comp-task)
+                                                      (number-to-string (plist-get comp-value :id)))
+                                        do
+                                        (goto-char (cdar comp-task))
+                                        (org-todo 'done)
+                                        (org-archive-subtree)))
                       (cl-loop for task-pos-id across (org-wlist--get-prop-value lst-value :task-pos)
                                do
                                (cl-loop for task-value across (plist-get lst-value :task)
@@ -158,117 +214,168 @@
                                         (setq str-lst
                                               (org-wlist--append-header str-lst task-value))
                                         (setq str-lst
-                                              (org-wlist--loop  lst-value :reminder  :task_id task-value :id
-                                                                'org-wlist--append-remind str-lst))
+                                              (org-wlist--loop
+                                               lst-value :reminder  :task_id task-value :id
+                                               'org-wlist--append-remind str-lst))
                                         (setq str-lst
-                                              (org-wlist--loop  lst-value :note  :task_id task-value :id
-                                                                'org-wlist--append-note str-lst))
-                                        (org-wlist-append-to-list str-lst (list "  :END:\n"))
+                                              (org-wlist--loop
+                                               lst-value :note  :task_id task-value :id
+                                               'org-wlist--append-note str-lst))
+                                        (cl-loop for file-value across (plist-get lst-value :file)
+                                                 unless (file-directory-p
+                                                         (org-wlist--concat-fname file-value))
+                                                 do      (make-directory
+                                                          (org-wlist--concat-fname file-value))
+                                                 unless (file-exists-p
+                                                         (org-wlist--concat-fname
+                                                          "/"
+                                                          (plist-get file-value :file_name)
+                                                          (cdr (assoc  (plist-get file-value :content_type)
+                                                                       org-wlist-mime-alist ))))
+                                                 do
+                                                 (deferred:$
+                                                   (deferred:process
+                                                     "wget" "-O"
+                                                     (expand-file-name
+                                                      (org-wlist--concat-fname
+                                                       "/"
+                                                       (file-name-sans-extension
+                                                        (plist-get file-value :file_name))
+                                                       (cdr (assoc  (plist-get file-value :content_type)
+                                                                    org-wlist-mime-alist ))))
+                                                     (plist-get file-value :url))
+                                                   (deferred:nextc it
+                                                     (lambda ()
+                                                       nil )))
+                                                 return
+                                                 (when (plist-get file-value :task_id)
+                                                   (org-wlist-append-to-list
+                                                    str-lst (list (concat
+                                                                   "   :DIR: [["
+                                                                   org-wlist-dir
+                                                                   (number-to-string (plist-get file-value :task_id))
+                                                                   "]]\n")))))
+                                        (org-wlist-append-to-list
+                                         str-lst (list "   :END:\n"))
                                         (setq str-lst
-                                              (org-wlist--loop  lst-value :note  :task_id task-value :id
-                                                                'org-wlist--append-content str-lst))
-                                        (cl-loop for subtask-pos-id across (org-wlist--get-prop-value
-                                                                            lst-value :subtask-pos)
+                                              (org-wlist--loop
+                                               lst-value :note  :task_id task-value :id
+                                               'org-wlist--append-content str-lst))
+                                        (cl-loop for subtask-pos-id across (plist-get lst-value :subtask-pos)
+                                                 when (equal (plist-get subtask-pos-id :task_id)
+                                                             task-pos-id)
                                                  do
                                                  (cl-loop  for subtask-value across (plist-get lst-value :subtask)
-                                                           when (equal subtask-pos-id (plist-get subtask-value :id))
-                                                           do (setq str-lst
-                                                                    (org-wlist--append-subtask str-lst subtask-value))))))))
+                                                           when (equal (plist-get subtask-pos-id :task_id)
+                                                                       (plist-get subtask-value :task_id))
+                                                           do
+                                                           (cl-loop for subtask-pos-value across (plist-get subtask-pos-id :values)
+                                                                    when (equal subtask-pos-value (plist-get subtask-value :id))
+                                                                    do
+                                                                    (setq str-lst
+                                                                          (org-wlist--append-subtask str-lst subtask-value)))))))))
     (mapconcat 'identity str-lst "")))
 
 (defun org-wlist-post ()
   (interactive)
   (save-excursion
     (org-back-to-heading)
-  (let* ((next-head (org-wlist--get-next-headline))
-         (elem (org-element-headline-parser next-head t))
-         (title (org-element-property :title elem))
-         (level (org-element-property :level elem))
-         (id (org-wlist--get-valid-id elem))
-         (complete (when (string= "DONE"
-                                  (org-element-property :todo-keyword elem)) t))
-         (star (when (eq 65 (org-element-property :priority elem)) t))
-         (rev (org-wlist--string-to-number-safe
-               (org-element-property :REV elem)))
-         (remind (org-element-property :REMIND elem))
-         (remind-rev (org-wlist--string-to-number-safe
-                      (org-element-property :REMIND-REV elem)))
-         (remind-id (org-wlist--string-to-number-safe
-                     (org-element-property :REMIND-ID elem)))
-         (deadline (cadr (org-element-property :deadline elem)))
-         (year (plist-get deadline :year-end))
-         (month (plist-get deadline :month-end))
-         (day (plist-get deadline :day-end))
-         (date (when year
-                 (concat (number-to-string year) "-" (format "%02d" month)"-" (format "%02d" day))))
-         (parent-id 
-          (save-excursion
-            (outline-up-heading 1)
-            (org-wlist--string-to-number-safe
-            (org-element-property :ID (org-element-headline-parser next-head t)))))
-         (note  (if (plist-get (cadr elem) :contents-begin)
-                    (replace-regexp-in-string
-                     " *\\(.*\\(?:\n.*\\)*?\\) :END:\n" ""
-                     (buffer-substring-no-properties
-                      (plist-get (cadr elem) :contents-begin)
-                      (plist-get (cadr elem) :contents-end))) ""))
-         (note-rev (org-wlist--string-to-number-safe
-                    (org-element-property :NOTE-REV elem)))
-         (note-id (org-wlist--string-to-number-safe
-                   (org-element-property :NOTE-ID elem))))
-    (if id
-        (if (eq level 2)
-            (unless (and (string= title (org-wlist--get-prop id :task :title))
-                         (eq complete nil)
-                         (string= date (org-wlist--get-prop id :task :due_date))
-                         (eq star (if (eq ':json-false (org-wlist--get-prop id :task :starred)) nil t)))
-              (org-wlist--post-request "PATCH" (concat "tasks/" (number-to-string id)) :task
+    (let* ((next-head (org-wlist--get-next-headline))
+           (elem (org-element-headline-parser next-head t))
+           (title (org-element-property :title elem))
+           (level (org-element-property :level elem))
+           (id (org-wlist--get-valid-id elem))
+           (complete (when (string= "DONE"
+                                    (org-element-property :todo-keyword elem)) t))
+           (star (when (eq 65 (org-element-property :priority elem)) t))
+           (rev (org-wlist--string-to-number-safe
+                 (org-element-property :REV elem)))
+           (remind (org-element-property :REMIND elem))
+           (remind-rev (org-wlist--string-to-number-safe
+                        (org-element-property :REMIND-REV elem)))
+           (remind-id (org-wlist--string-to-number-safe
+                       (org-element-property :REMIND-ID elem)))
+           (deadline (cadr (org-element-property :deadline elem)))
+           (year (plist-get deadline :year-end))
+           (month (plist-get deadline :month-end))
+           (day (plist-get deadline :day-end))
+           (date (when year
+                   (concat (number-to-string year) "-" (format "%02d" month)"-" (format "%02d" day))))
+           (parent-id 
+            (save-excursion
+              (outline-up-heading 1)
+              (org-wlist--string-to-number-safe
+               (org-element-property :ID (org-element-headline-parser next-head t)))))
+           (note  (if (plist-get (cadr elem) :contents-begin)
+                      (replace-regexp-in-string
+                       " *\\(.*\\(?:\n.*\\)*?\\) :END:\n" ""
+                       (buffer-substring-no-properties
+                        (plist-get (cadr elem) :contents-begin)
+                        (plist-get (cadr elem) :contents-end))) ""))
+           (note-rev (org-wlist--string-to-number-safe
+                      (org-element-property :NOTE-REV elem)))
+           (note-id (org-wlist--string-to-number-safe
+                     (org-element-property :NOTE-ID elem))))
+      (if id
+          (if (eq level 2)
+              (progn
+                (unless  (equal (org-wlist--get-prop id :task :title t)
+                                parent-id)
+                  (org-wlist--post-request "PATCH" (concat "tasks/" (format "%05.00d" id)) :task
+                                           `(("list_id" . ,parent-id)
+                                             ("revision" . ,rev)))
+                  (org-wlist--post-pos))
+                (unless (and (string= title (org-wlist--get-prop id :task :title))
+                             (eq complete nil)
+                             (string= date (org-wlist--get-prop id :task :due_date))
+                             (eq star (if (eq ':json-false (org-wlist--get-prop id :task :starred)) nil t)))
+                  (org-wlist--post-request "PATCH" (concat "tasks/" (format "%05.00d" id)) :task
+                                           `(("revision" . ,rev)
+                                             ("title" . ,title)
+                                             ("completed" . ,complete)
+                                             ("due_date" . ,date)
+                                             ("starred" . ,star)))))
+            (unless (and (string= title (org-wlist--get-prop id :subtask :title))
+                         (eq complete nil))
+              (org-wlist--post-request "PATCH" (concat "subtasks/" id) :subtask
                                        `(("revision" . ,rev)
                                          ("title" . ,title)
-                                         ("completed" . ,complete)
-                                         ("due_date" . ,date)
-                                         ("starred" . ,star))))
-          (unless (and (string= title (org-wlist--get-prop id :subtask :title))
-                       (eq complete nil))
-            (org-wlist--post-request "PATCH" (concat "subtasks/" id) :subtask
-                                     `(("revision" . ,rev)
+                                         ("completed" . ,complete)))))
+        (if (eq level 2)
+            (org-wlist--post-request "POST" "tasks" :task
+                                     `(("list_id" . ,parent-id)
                                        ("title" . ,title)
-                                       ("completed" . ,complete)))))
-      (if (eq level 2)
-          (org-wlist--post-request "POST" "tasks" :task
-                                   `(("list_id" . ,parent-id)
-                                     ("title" . ,title)
-                                     ("due_date" . ,date)))
-        (org-wlist--post-request "POST" "subtasks" :task
-                                 `(("task_id" . ,parent-id)
-                                   ("title" . ,title)))))
-    (when remind
-      (let* ((iso-date (org-wlist--format-org2iso
-                        (string-to-number (substring remind 1 5))
-                        (string-to-number (substring remind 6 8))
-                        (string-to-number (substring remind 9 11))
-                        (string-to-number (substring remind 14 16))
-                        (string-to-number (substring remind 17 19)) t)) )
-        (if remind-rev
-            (unless (string= (org-wlist--get-prop remind-id :reminder :date) iso-date)
-              (org-wlist--post-request
-               "PATCH"
-               (concat "reminders/" (number-to-string remind-id)) :reminder
-               `(("revision" . ,remind-rev)
-                 ("id" . ,remind-id)
-                 ("date" . ,iso-date))))
-          (org-wlist--post-request "POST" "reminders" :reminder
+                                       ("due_date" . ,date)))
+          (org-wlist--post-request "POST" "subtasks" :task
+                                   `(("task_id" . ,parent-id)
+                                     ("title" . ,title)))))
+      (when remind
+        (let* ((iso-date (org-wlist--format-org2iso
+                          (string-to-number (substring remind 1 5))
+                          (string-to-number (substring remind 6 8))
+                          (string-to-number (substring remind 9 11))
+                          (string-to-number (substring remind 14 16))
+                          (string-to-number (substring remind 17 19)) t)) )
+          (if remind-rev
+              (unless (string= (org-wlist--get-prop remind-id :reminder :date) iso-date)
+                (org-wlist--post-request
+                 "PATCH"
+                 (concat "reminders/" (number-to-string remind-id)) :reminder
+                 `(("revision" . ,remind-rev)
+                   ("id" . ,remind-id)
+                   ("date" . ,iso-date))))
+            (org-wlist--post-request "POST" "reminders" :reminder
+                                     `(("task_id" . ,id)
+                                       ("date" . ,iso-date))))))
+      (when (and (not (string= "" note))  (eq level 2))
+        (if note-rev
+            (unless (string= (org-wlist--get-prop note-id :note :content) note)
+              (org-wlist--post-request "PATCH" (concat "notes/" (number-to-string note-id)) :note
+                                       `(("revision" . ,note-rev)
+                                         ("content" . ,note))))
+          (org-wlist--post-request "POST" "notes" :note
                                    `(("task_id" . ,id)
-                                     ("date" . ,iso-date))))))
-    (when (and (not (string= "" note))  (eq level 2))
-      (if note-rev
-          (unless (string= (org-wlist--get-prop note-id :note :content) note)
-            (org-wlist--post-request "PATCH" (concat "notes/" (number-to-string note-id)) :note
-                                     `(("revision" . ,note-rev)
-                                       ("content" . ,note))))
-        (org-wlist--post-request "POST" "notes" :note
-                                 `(("task_id" . ,id)
-                                   ("content" . ,note))))))))
+                                     ("content" . ,note))))))))
 
 (defun org-wlist-post-all ()
   (interactive)
@@ -284,13 +391,11 @@
                while next do
                (goto-char next)
                (org-wlist-post)
-               (alert  "test":title "test")
                (setq pos (1+ next))
                finally
                (remove-text-properties (point-min) (point-max) '(org-wlist nil))))))
 
 (defun org-wlist-change-pos ()
-    (interactive)
   (org-wlist-change-pos-1 'org-wlist--pos-buffer))
 
 (defun org-wlist-change-pos-1  (pos-fun)
@@ -299,6 +404,7 @@
       (org-wlist--post-request
        "PATCH"  (concat "list_positions/"
                         (number-to-string (org-wlist--get-list-pos-prop :id)))
+       :list-pos
        `(("values"  . ,(vconcat   (car pos-lst)))
          ("revision" . ,(org-wlist--get-list-pos-prop :revision)))))
     (cl-loop for lst-id in (car pos-lst)
@@ -309,12 +415,7 @@
                          do  (unless (equal
                                       (vconcat task-id)
                                       (plist-get (elt (plist-get lst-value :task-pos) 0) :values))
-                               (org-wlist--post-request
-                                "PATCH"
-                                (concat "task_positions/"
-                                        (number-to-string (plist-get (elt (plist-get lst-value :task-pos) 0) :id))) :task-pos
-                                        `(("values"  . ,(vconcat   task-id))
-                                          ("revision" . ,(plist-get (elt (plist-get lst-value :task-pos) 0) :revision)))))))))
+                               (org-wlist--patch-task-pos lst-value task-id))))))
 
 (defun org-wlist--post-pos ()
   (interactive)
@@ -333,40 +434,44 @@
          `(("values"  . ,(vconcat   (cl-loop for value across (request-response-data res)
                                              collect (plist-get value :id))))
            ("revision" . ,(org-wlist--get-prop (string-to-number (org-wlist--get-parent-id)) :task-pos :revision))))))))
-        
+
+
+(defun org-wlist--patch-task-pos (lst-value task-id)
+  (org-wlist--post-request
+   "PATCH"
+   (concat "task_positions/"
+           (number-to-string (plist-get (elt (plist-get lst-value :task-pos) 0) :id))) :task-pos
+           `(("values"  . ,(vconcat  task-id))
+             ("revision" . ,(plist-get (elt (plist-get lst-value :task-pos) 0) :revision)))))
+
 (defun org-wlist--pos-buffer ()
   (let* ((local-id (mapcar 'string-to-number (with-current-buffer (org-wlist--get-buffer)
-                     (org-element-map (org-element-parse-buffer) 'headline
-                       (lambda (hl) (org-element-property :ID hl))))))
+                                               (org-element-map (org-element-parse-buffer) 'headline
+                                                 (lambda (hl) (org-element-property :ID hl))))))
          (local-level  (with-current-buffer (org-wlist--get-buffer)
-                        (org-element-map (org-element-parse-buffer) 'headline
-                          (lambda (hl) (org-element-property :level hl))))))
-  (cl-loop with cache-level  = 0
-           with list
-           with task
-           with subtask
-           with task-list
-           with subtask-list
-           for id in local-id
-           for level in local-level
-           when (eq level 1) collect id into list
-           when (and (eq level 1) (>= cache-level level))
-           collect task into task-list
-           and do (setq task nil)
-           when (eq level 2) 
-           collect id into task
-           when (and (< level 3) (or (> cache-level level) (and (eq cache-level 2) (eq level 2))))
-           collect subtask into subtask-list
-           and do (setq subtask nil)
-           when (eq level 3)
-           collect id into subtask
-           do (setq cache-level level)
-           finally
-           (when (not (eq cache-level 3))
-             (setq task-list (append task-list (list task))))
-           (when (not (eq cache-level 1))
-             (setq subtask-list (append subtask-list (list subtask))))
-           (return `(,list ,task-list ,subtask-list)))))
+                         (org-element-map (org-element-parse-buffer) 'headline
+                           (lambda (hl) (org-element-property :level hl))))))
+    (cl-loop with cache-level  = 0
+             for id in local-id
+             for level in local-level
+             when (eq level 1) collect id into list
+             when (and (eq level 1) (>= cache-level level))
+             collect task into task-list
+             and do (setq task nil)
+             when (eq level 2) 
+             collect id into task
+             when (and (< level 3) (or (> cache-level level) (and (eq cache-level 2) (eq level 2))))
+             collect subtask into subtask-list
+             and do (setq subtask nil)
+             when (eq level 3)
+             collect id into subtask
+             do (setq cache-level level)
+             finally
+             (when (not (eq cache-level 3))
+               (setq task-list (append task-list (list task))))
+             (when (not (eq cache-level 1))
+               (setq subtask-list (append subtask-list (list subtask))))
+             (return `(,list ,task-list ,subtask-list)))))
 
 (add-hook 'find-file-hook
           (lambda ()
@@ -374,55 +479,55 @@
                        (eq (current-buffer) (org-wlist--get-buffer)))
               (add-hook 'after-change-functions 'org-wlist--collect-change-pos nil t))))
 
-(defun org-wlist--collect-change-pos (&optional beg end len)
+(defun org-wlist--collect-change-pos (beg end len)
+  beg end len
   (save-excursion
     (when (eq  (current-buffer) (org-wlist--get-buffer))
       (org-back-to-heading)
       (put-text-property (point) (1+ (point)) 'org-wlist t))
     (when (eq  (buffer-base-buffer (current-buffer)) (org-wlist--get-buffer))
-        (remove-hook 'after-change-functions 'org-wlist--collect-change-pos t))))
+      (remove-hook 'after-change-functions 'org-wlist--collect-change-pos t))))
 
-(defun org-wlist--collect-change-pos-1 ()
+(defun org-wlist--get-prop (id resource prop &optional parent)
+  (cl-loop for lst-value across (plist-get org-wlist-plist :list)
+           with match
+           do (setq match
+                    (cl-loop for task-value across (plist-get lst-value resource)
+                             when (equal (plist-get task-value :id) 
+                                         id)
+                             return 
+                             (if parent (plist-get lst-value :id)
+                               (plist-get task-value prop))))
+           when match
+           return match))
+
+(defun org-wlist--increase-id (resource pos)
   (save-excursion
-      (org-back-to-heading)
-      (put-text-property (point) (1+ (point)) 'org-wlist t)))
-
-(add-hook 'org-capture-before-finalize-hook 'org-wlist--collect-change-pos-1)
-
-(defun org-wlist--get-prop (id resource prop)
-    (cl-loop for lst-value across (plist-get org-wlist-plist :list)
-             with match
-             do (setq match (cl-loop for task-value across (plist-get lst-value resource)
-                                   when (equal (plist-get task-value :id) 
-                                                id)
-                                   return (plist-get task-value prop)))
-             when match
-             return match))
-
-(defun org-wlist--increase-id (resource)
-  (save-excursion
+    (goto-char pos)
     (org-back-to-heading)
     (let (level)
+      (remove-hook 'after-change-functions 'org-wlist--collect-change-pos t)
       (if (or (eq resource :reminder)
               (eq resource :note))
-        (let* ((elem (org-element-headline-parser (point-max) t))
-               (rev (org-wlist--string-to-number-safe (org-element-property
-                                       (if (eq resource :note)
-                                           :NOTE-REV :REMIND-REV) elem))))
-          (re-search-forward (if (eq resource :note)
-                                           ":NOTE-REV:" ":REMIND-REV:") nil t)
-          (re-search-forward "[0-9].*" nil t)
-          (replace-match (number-to-string (1+ rev))))  
-      (while (not (eq level 1))
-        (let* ((elem (org-element-headline-parser (point-max) t))
-               (rev (org-wlist--string-to-number-safe
-                     (org-element-property :REV elem))))
-          (setq level  (org-element-property :level elem))
-          (re-search-forward ":REV:" nil t)
-          (re-search-forward "[0-9].*" nil t)
-          (replace-match (number-to-string (1+ rev)))
-          (unless (eq level 1)
-          (outline-up-heading 1))))))))
+          (let* ((elem (org-element-headline-parser (point-max) t))
+                 (rev (org-wlist--string-to-number-safe (org-element-property
+                                                         (if (eq resource :note)
+                                                             :NOTE-REV :REMIND-REV) elem))))
+            (re-search-forward (if (eq resource :note)
+                                   ":NOTE-REV:" ":REMIND-REV:") nil t)
+            (re-search-forward "[0-9].*" nil t)
+            (replace-match (number-to-string (1+ rev))))  
+        (while (not (eq level 1))
+          (let* ((elem (org-element-headline-parser (point-max) t))
+                 (rev (org-wlist--string-to-number-safe
+                       (org-element-property :REV elem))))
+            (setq level  (org-element-property :level elem))
+            (re-search-forward ":REV:" nil t)
+            (re-search-forward "[0-9].*" nil t)
+            (replace-match (number-to-string (1+ rev)))
+            (unless (eq level 1)
+              (outline-up-heading 1)))))
+      (add-hook 'after-change-functions 'org-wlist--collect-change-pos nil t))))
 
 (defun org-wlist--request (endpoint &optional params)
   (deferred:$
@@ -437,41 +542,67 @@
         (request-response-data res)))))
 
 (defun org-wlist--post-request (type endpoint resource data)
-  (deferred:$
-    (request-deferred (concat org-wlist-url endpoint)
-                      :type type
-                      :data (json-encode data)
-                      :headers  `(("X-Access-Token" . ,org-wlist-token)
-                                  ("X-Client-ID" . ,org-wlist-client-id)
-                                  ("Content-Type" . "application/json"))
-                      :parser 'org-wlist--json-read
-                      :error
-                      (cl-function (lambda (&key error-thrown)
-                                     (message "Got error: %S" error-thrown))))
-    (deferred:nextc it
-      (lambda (res)
-        (let ((dat (request-response-data res)))
-          (cond
-           ((eq resource :task)
-            (alert "Success" :title "Task"))
-            ((eq resource :subtask)
-            (alert "Success" :title "SubTask"))
-           ((eq resource :reminder)
-            (alert "Success" :title "Reminder"))
-           ((eq resource :note)
-            (alert "Success" :title "Note")))
-          (if (string= type "POST")
-              (org-wlist--post-pos)
-            (org-wlist--increase-id resource)))))))
+  (let ((pos (point)))
+    (deferred:$
+      (request-deferred (concat org-wlist-url endpoint)
+                        :type type
+                        :data (json-encode data)
+                        :headers  `(("X-Access-Token" . ,org-wlist-token)
+                                    ("X-Client-ID" . ,org-wlist-client-id)
+                                    ("Content-Type" . "application/json"))
+                        :parser 'org-wlist--json-read
+                        :error
+                        (cl-function (lambda (&key error-thrown)
+                                       (message "Got error: %S" error-thrown))))
+      (deferred:nextc it
+        (lambda (res)
+          (let* ((dat (request-response-data res))
+                 (title (plist-get dat :title)))
+            
+            (cond
+             ((eq resource :list-pos)
+              (org-wlist--notify "Task position"
+                                 "Task position was changed."))
+             ((eq resource :task)
+              (if (string= type "POST")
+                  (org-wlist--notify "New Task"
+                                     (concat "Task ["
+                                             title "] was added."))
+                (org-wlist--notify "Update Task"
+                                   (concat "Task ["
+                                           title "] was edited."))))
+             ((eq resource :subtask)
+              (if (string= type "POST")
+                  (org-wlist--notify "New Subtask"
+                                     (concat "Subtask ["
+                                             title "] was added."))
+                (org-wlist--notify "Update Subtask"
+                                   (concat "Subtask ["
+                                           title "] was edited."))))
+             ((eq resource :reminder)
+              (if (string= type "POST")
+                  (org-wlist--notify "New Reminder"
+                                     "New reminder was added.")
+                (org-wlist--notify "Update Reminder"
+                                   "Reminder was edited.")))
+             ((eq resource :note)
+              (if (string= type "POST")
+                  (org-wlist--notify "New Note"
+                                     "New Note was added.")
+                (org-wlist--notify "Update Note"
+                                   "Note was edited."))))
+            (if (string= type "POST")
+                (org-wlist--post-pos)
+              (org-wlist--increase-id resource pos))))))))
 
 (defun org-wlist--get-list-pos-prop (prop)
   (plist-get (elt (plist-get org-wlist-plist :list-pos) 0) prop))
 
 (defun org-wlist--get-task-prop (lst task prop)
   (plist-get (elt (org-wlist--get-list-prop lst :task) task) prop))
-  
+
 (defun org-wlist--get-list-prop (lst prop)
-    (plist-get (elt (plist-get org-wlist-plist :list) lst) prop))
+  (plist-get (elt (plist-get org-wlist-plist :list) lst) prop))
 
 (defun org-wlist--map (lst seq)
   (mapcar
@@ -485,8 +616,7 @@
 (defun org-wlist--get-parent-id ()
   (save-excursion
     (outline-up-heading 1)
-    
-     (org-element-property :ID (org-element-headline-parser (point-max) t) )))
+    (org-element-property :ID (org-element-headline-parser (point-max) t))))
 
 (defun org-wlist--format-org2iso (year mon day &optional hour min tz)
   (concat
@@ -569,7 +699,7 @@ Otherwise return nil."
   (if (org-element-property :ID elem)
       (org-wlist--string-to-number-safe
        (format "%05.00d"
-               (org-wlist--string-to-number-safe
+               (string-to-number
                 (org-element-property :ID elem))))
     nil))
 
@@ -614,17 +744,17 @@ Otherwise return nil."
                  (concat "   :NOTE-ID: " (number-to-string (plist-get plst :id))  "\n"))))
 
 (defun org-wlist--append-content (string-list plst)
-(append string-list (list (concat "" (plist-get plst :content)  "\n"))))
+  (append string-list (list (concat "" (plist-get plst :content)  "\n"))))
 
 (defun org-wlist--get-prop-value (lst-value prop)
   (plist-get (elt (plist-get lst-value prop) 0) :values))
 
 (defun org-wlist--append-subtask (str-lst plst)
-   (append str-lst (list (concat "*** TODO " (plist-get plst :title)  "\n"
-                         "   :PROPERTIES:\n"
-                         "   :ID: " (number-to-string (plist-get plst :id)) "\n"
-                         "   :REV: " (number-to-string (plist-get plst :revision)) "\n"
-                         "   :END:\n"))))
+  (append str-lst (list (concat "*** TODO " (plist-get plst :title)  "\n"
+                                "   :PROPERTIES:\n"
+                                "   :ID: " (number-to-string (plist-get plst :id)) "\n"
+                                "   :REV: " (number-to-string (plist-get plst :revision)) "\n"
+                                "   :END:\n"))))
 
 (defun org-wlist--loop (base-prop base-id child-id parent-prop parent-id fun str-lst) 
   (cl-loop for plst across (plist-get base-prop base-id)
@@ -632,12 +762,27 @@ Otherwise return nil."
            do (setq str-lst (funcall fun str-lst plst)))
   str-lst)
 
+(defun org-wlist--get-id-alist ()
+  (org-element-map (org-element-parse-buffer) 'headline
+    (lambda (hl)
+      (when (eq 2 (org-element-property :level hl)) ; want only level-2
+        (org-element-map hl 'node-property
+          (lambda (np)
+            (when (string= (org-element-property :key np) "ID")
+              (cons (org-element-property :value np)
+                    (org-element-property :begin np)))))))))
+
+(defun org-wlist--concat-fname (file-value &rest args)
+  (concat org-wlist-dir
+          (when (plist-get file-value :task_id)
+            (number-to-string (plist-get file-value :task_id)))
+          (mapconcat 'identity args "")))
+
 (defun org-wlist--notify (title mes)
-  (let ((file (expand-file-name (concat user-emacs-directory
-                                        "org-wunderlist/"
+  (let ((file (expand-file-name (concat org-wlist-dir
                                         org-wlist-icon)))
-                (mes mes)
-                (title title))
+        (mes mes)
+        (title title))
     (if (file-exists-p file)
         (if (eq system-type 'gnu/linux)
             (alert mes :title title :icon file)
@@ -649,16 +794,15 @@ Otherwise return nil."
         (deferred:nextc it
           (lambda (buf)
             (with-current-buffer buf
-               (let ((tmp (substring (buffer-string) (+ (string-match "\n\n" (buffer-string)) 2))))
-                 (erase-buffer)
-                 (insert tmp)
-                 (write-file file)))
+              (let ((tmp (substring (buffer-string) (+ (string-match "\n\n" (buffer-string)) 2))))
+                (erase-buffer)
+                (insert tmp)
+                (write-file file)))
             (kill-buffer buf)
             (if (eq system-type 'gnu/linux)
-            (alert mes :title title :icon file)
-          (alert mes :title title))))))))
+                (alert mes :title title :icon file)
+              (alert mes :title title))))))))
 
-(org-wlist--notify "test" "hoge")
 (provide 'org-wunderlist)
 
 ;;; org-wunderlist.el ends here
