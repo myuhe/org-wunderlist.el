@@ -13,7 +13,7 @@
 
 * Installation
 
-1. Go to [[https://developer.wunderlist.com/apps][Me Apps page]]
+1. Go to [[https://developer.wunderlist.com/apps][My Apps page]]
 
 2. Create a app (with any name)
 
@@ -27,17 +27,17 @@
 (require 'org-wunderlist)
 (setq org-wlist-client-id "your-client-id"
       org-wlist-token "your-token"
-      org-gcal-file  "~/.emacs.d/Wunderlist.org"
+      org-wlist-file  "~/.emacs.d/Wunderlist.org"
       org-wlist-dir "~/.emacs.d/org-wunderlist/")
 #+end_src
 
 * Usage
 ** =org-wlist-fetch=
-   Fetch Google calendar events and populate =org-gcal-file-alist= locations.
-** =org-gcal-post=
-   Post/edit org block at point to Google calendar. ~code~
-** =org-gcal-post-all=
-   Refresh the OAuth token. OAuth token expired in 3600 seconds, You should refresh token on a regular basis.
-** =org-gcal-post-pos=
-
+   Fetch Wunderlist tasks and populate =org-wlist-dir= locations.
+** =org-wlist-post=
+   Post/edit org block at point to Wunderlist. 
+** =org-wlist-post-all=
+   Post/edit all tasks to Wunderlist. (this command is unstable)
+** =org-wlist-post-pos=
+   Edit task order on Org-mode side.
 
