@@ -2,3 +2,42 @@
  =org-wunderlist= offers
   - Fetch Wunderlist task
   - Post/edit org element
+  - Edit task order on Org-mode side.
+  - Download files from Wunderlist server side.
+
+* Requirements
+ 
+- [[https://github.com/tkf/emacs-request][tkf/emacs-request]]
+- [[https://github.com/jwiegley/alert][jwiegley/alert]]
+- [[https://github.com/magnars/s.el][magnars/s.el]]
+
+* Installation
+
+1. Go to [[https://developer.wunderlist.com/apps][Me Apps page]]
+
+2. Create a app (with any name)
+
+3. Click on  =CREATE APP= 
+
+4. Record the Client ID and Client secret for setup.
+
+** Setting example
+
+#+begin_src elisp
+(require 'org-wunderlist)
+(setq org-wlist-client-id "your-client-id"
+      org-wlist-token "your-token"
+      org-gcal-file  "~/.emacs.d/Wunderlist.org"
+      org-wlist-dir "~/.emacs.d/org-wunderlist/")
+#+end_src
+
+* Usage
+** =org-wlist-fetch=
+   Fetch Google calendar events and populate =org-gcal-file-alist= locations.
+** =org-gcal-post=
+   Post/edit org block at point to Google calendar. ~code~
+** =org-gcal-post-all=
+   Refresh the OAuth token. OAuth token expired in 3600 seconds, You should refresh token on a regular basis.
+** =org-gcal-post-pos=
+
+
