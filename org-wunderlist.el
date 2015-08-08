@@ -148,34 +148,22 @@
                                    "subtask_positions")))))
             (deferred:nextc it
               (lambda (res)
-                (cl-mapcar (lambda (lst task task-pos subtask subtask-pos)
+                (cl-mapcar (lambda (lst task task-pos subtask subtask-pos note reminder file)
                              (plist-put lst :task task)
                              (plist-put lst :task-pos task-pos)
                              (plist-put lst :subtask subtask)
-                             (plist-put lst :subtask-pos subtask-pos))
-                           (plist-get org-wlist-plist :list)
-                           (org-wlist--map (number-sequence 0                 (1- (length id))) res)
-                           (org-wlist--map (number-sequence (length id)       (1- (* 2 (length id)))) res)
-                           (org-wlist--map (number-sequence (* 2 (length id)) (1- (* 3 (length id)))) res)
-                           (org-wlist--map (number-sequence (* 3 (length id)) (1- (* 4 (length id)))) res))))
-            (deferred:parallel
-              (append
-               (apply 'append
-                      (cl-mapcar (lambda (name)
-                                   (cl-mapcar (lambda (endpoint params)
-                                                (org-wlist--request endpoint `(("list_id" . ,params))))
-                                              (make-list (length id) name) id))
-                                 '("notes" "reminders" "files")))))
-            (deferred:nextc it
-              (lambda (res)
-                (cl-mapcar (lambda (lst  note reminder file)
+                             (plist-put lst :subtask-pos subtask-pos)
                              (plist-put lst :note note)
                              (plist-put lst :reminder reminder)
                              (plist-put lst :file file))
                            (plist-get org-wlist-plist :list)
                            (org-wlist--map (number-sequence 0                 (1- (length id))) res)
                            (org-wlist--map (number-sequence (length id)       (1- (* 2 (length id)))) res)
-                           (org-wlist--map (number-sequence (* 2 (length id)) (1- (* 3 (length id)))) res))
+                           (org-wlist--map (number-sequence (* 2 (length id)) (1- (* 3 (length id)))) res)
+                           (org-wlist--map (number-sequence (* 3 (length id)) (1- (* 4 (length id)))) res)
+                           (org-wlist--map (number-sequence (* 4 (length id)) (1- (* 5 (length id)))) res)
+                           (org-wlist--map (number-sequence (* 5 (length id)) (1- (* 6 (length id)))) res)
+                           (org-wlist--map (number-sequence (* 6 (length id)) (1- (* 7 (length id)))) res))
                 (with-current-buffer buf
                   (save-excursion
                     (let ((dump (org-wlist--dump)))
