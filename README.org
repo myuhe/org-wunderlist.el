@@ -25,19 +25,19 @@
 
 #+begin_src elisp
 (require 'org-wunderlist)
-(setq org-wlist-client-id "your-client-id"
-      org-wlist-token "your-token"
-      org-wlist-file  "~/.emacs.d/Wunderlist.org"
-      org-wlist-dir "~/.emacs.d/org-wunderlist/")
+(setq org-wunderlist-client-id "your-client-id"
+      org-wunderlist-token "your-token"
+      org-wunderlist-file  "~/.emacs.d/Wunderlist.org"
+      org-wunderlist-dir "~/.emacs.d/org-wunderlist/")
 #+end_src
 
 * Usage
-** =org-wlist-fetch=
-   Fetch Wunderlist tasks and populate =org-wlist-dir= locations.
-** =org-wlist-post=
+** =org-wunderlist-fetch=
+   Fetch Wunderlist tasks and populate =org-wunderlist-dir= locations.
+** =org-wunderlist-post=
    Post/edit org block at point to Wunderlist. 
-** =org-wlist-post-all=
+** =org-wunderlist-post-all=
    Post/edit all tasks to Wunderlist. (this command is unstable)
-** =org-wlist-post-pos=
+** =org-wunderlist-post-pos=
    Edit task order on Org-mode side.
 
