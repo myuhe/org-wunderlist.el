@@ -15,11 +15,13 @@
 
 1. Go to [[https://developer.wunderlist.com/apps][My Apps page]]
 
-2. Create a app (with any name)
+2. Click on  =CREATE APP=
 
-3. Click on  =CREATE APP= 
+3. Put any URL on  =App Url=  and  =Auth Callback URL=.
 
-4. Record the Client ID and Client secret for setup.
+4. Click on  =SAVE=
+
+5. Record the Client ID and Client secret for setup.
 
 ** Setting example
 
@@ -41,3 +43,7 @@
 ** =org-wunderlist-post-pos=
    Edit task order on Org-mode side.
 
+
+
+
+App Url  Auth Callback URL
