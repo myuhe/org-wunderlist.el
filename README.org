@@ -23,6 +23,15 @@
 
 5. Record the Client ID and Client secret for setup.
 
+** Retrieving the OAuth token to access your wunderlist from emacs
+In order to access wunderlist from emacs, you need to authorize the client and generate an OAuth token. 
+    1. Point your browser to https://www.wunderlist.com/oauth/authorize?client_id=APP_CLIENT_ID&redirect_uri=http://localhost/nonexisting_url&state=irrelevant (replace APP_CLIENT_ID with your own value)
+    2. The browser will log you into your wunderlist account, where you have to authorize the request.
+    3. After authorization, you will be redirected with a "code" parameter in the querystring. Use this value to replace the CODE value in the next curl request. All values written in CAPS should be replaced with your own values
+       : curl -H "Content-Type: application/json" -X POST -d '{"client_id":"APP_CLIENT_ID","client_secret":"APP_CLIENT_SECRET","code":"CODE"}' https://www.wunderlist.com/oauth/access_token
+    4. The response from the curl request is a JSON "access_token" value. This token is your OAuth token, to insert as the =org-wunderlist-token= value in your emacs settings
+
+NB: These steps are generally explained in the [[https://developer.wunderlist.com/documentation/concepts/authorization][Wunderlist API documentation]]
 ** Setting example
 
 #+begin_src elisp
